@@ -1,8 +1,12 @@
-import { addHexPrefix, fromSigned, toUnsigned, bigIntToBuffer, hashPersonalMessage } from '@ethereumjs/util'
-import { Transaction, TxData } from '@ethereumjs/tx';
+import { addHexPrefix, fromSigned, toUnsigned, hashPersonalMessage, bigIntToBytes } from '@ethereumjs/util'
 import { Common } from '@ethereumjs/common'
 import { Wallets } from './Wallets';
 import { UBuffer } from './Utils/UBuffer';
+import {
+    isLegacyTxData, TypedTxData
+} from "@ethereumjs/tx/src/types";
+import type { PrefixedHexString } from "@ethereumjs/util/src/types";
+import { TransactionFactory } from "@ethereumjs/tx/src/transactionFactory";
 
 /**
  * The Signer class provides functionality to sign Ethereum transactions and messages using
@@ -35,12 +39,19 @@ export class Signer {
      * @param txData The transaction data to sign.
      * @returns A Promise that resolves to the serialized transaction as a '0x'-prefixed hex string.
      */
-    public async signTransaction(account: { keyId: string, address?: Buffer }, txData: TxData) {
-        const digest     = Transaction.fromTxData(txData, { common: this.common }).getMessageToSign();
-        const {r, s, v}  = await this.wallets.ecsign(account, digest, this.common?.chainId());
-        const signed     = Transaction.fromTxData({...txData, r, s, v}, { common: this.common });
-    
-        return addHexPrefix(signed.serialize().toString('hex'));
+    public async signTransaction(account: { keyId: string, address?: Buffer }, txData: TypedTxData): Promise<PrefixedHexString> {
+        const digest = TransactionFactory.fromTxData(txData, { common: this.common }).getMessageToSign()
+
+        let digestBuffer: Buffer;
+        if (isLegacyTxData(txData)) {
+            digestBuffer = Buffer.concat(digest as Uint8Array[])
+        } else {
+            digestBuffer = Buffer.from(digest as Uint8Array)
+        }
+
+        const {r, s, v}  = await this.wallets.ecsign(account, digestBuffer, this.common?.chainId());
+        const signed     = TransactionFactory.fromTxData({...txData, r, s, v}, { common: this.common });
+        return addHexPrefix(Buffer.from(signed.serialize()).toString('hex'));
     }
 
     /**
@@ -52,7 +63,7 @@ export class Signer {
      */
     public async signMessage(account: { keyId: string, address?: Buffer }, message: string) {
         const digest = hashPersonalMessage(Buffer.from(message));
-        return this.signDigest(account, digest);
+        return this.signDigest(account, Buffer.from(digest));
     }
 
     /**
@@ -64,9 +75,9 @@ export class Signer {
     public async signDigest(account: { keyId: string, address?: Buffer }, digest: string | Buffer) {
         const {r, s, v} = await this.wallets.ecsign(account, UBuffer.bufferOrHex(digest));
 
-        const rStr = toUnsigned(fromSigned(r)).toString('hex');
-        const sStr = toUnsigned(fromSigned(s)).toString('hex');
-        const vStr = bigIntToBuffer(v).toString('hex');
+        const rStr = Buffer.from(toUnsigned(fromSigned(r))).toString('hex');
+        const sStr = Buffer.from(toUnsigned(fromSigned(s))).toString('hex');
+        const vStr = Buffer.from(bigIntToBytes(v)).toString('hex');
 
         return addHexPrefix(rStr.concat(sStr, vStr));
     }
