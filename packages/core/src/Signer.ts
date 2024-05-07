@@ -1,8 +1,18 @@
-import { addHexPrefix, fromSigned, toUnsigned, bigIntToBuffer, hashPersonalMessage } from '@ethereumjs/util'
-import { Transaction, TxData } from '@ethereumjs/tx';
+import { addHexPrefix, fromSigned, toUnsigned, hashPersonalMessage, bigIntToBytes } from '@ethereumjs/util'
+import { AccessListEIP2930TxData, BlobEIP4844TxData, LegacyTransaction } from '@ethereumjs/tx';
 import { Common } from '@ethereumjs/common'
 import { Wallets } from './Wallets';
 import { UBuffer } from './Utils/UBuffer';
+import {
+    FeeMarketEIP1559TxData,
+    isAccessListEIP2930TxData, isBlobEIP4844TxData,
+    isFeeMarketEIP1559TxData,
+    isLegacyTxData, TypedTxData
+} from "@ethereumjs/tx/src/types";
+import { FeeMarketEIP1559Transaction } from "@ethereumjs/tx/src/eip1559Transaction";
+import type { PrefixedHexString } from "@ethereumjs/util/src/types";
+import { AccessListEIP2930Transaction } from "@ethereumjs/tx/src/eip2930Transaction";
+import { BlobEIP4844Transaction } from "@ethereumjs/tx/src/eip4844Transaction";
 
 /**
  * The Signer class provides functionality to sign Ethereum transactions and messages using
@@ -35,12 +45,29 @@ export class Signer {
      * @param txData The transaction data to sign.
      * @returns A Promise that resolves to the serialized transaction as a '0x'-prefixed hex string.
      */
-    public async signTransaction(account: { keyId: string, address?: Buffer }, txData: TxData) {
-        const digest     = Transaction.fromTxData(txData, { common: this.common }).getMessageToSign();
-        const {r, s, v}  = await this.wallets.ecsign(account, digest, this.common?.chainId());
-        const signed     = Transaction.fromTxData({...txData, r, s, v}, { common: this.common });
-    
-        return addHexPrefix(signed.serialize().toString('hex'));
+    public async signTransaction(account: { keyId: string, address?: Buffer }, txData: TypedTxData): Promise<PrefixedHexString> {
+        if (isLegacyTxData(txData)) {
+            const digest = LegacyTransaction.fromTxData(txData, { common: this.common }).getMessageToSign();
+            const {r, s, v}  = await this.wallets.ecsign(account, Buffer.concat(digest), this.common?.chainId());
+            const signed     = LegacyTransaction.fromTxData({...txData, r, s, v}, { common: this.common });
+            return addHexPrefix(signed.serialize().toString('hex'));
+        } else if (isFeeMarketEIP1559TxData(txData)) {
+            const digest = FeeMarketEIP1559Transaction.fromTxData(txData, { common: this.common }).getMessageToSign();
+            const {r, s, v}  = await this.wallets.ecsign(account, Buffer.from(digest), this.common?.chainId());
+            const signed     = FeeMarketEIP1559Transaction.fromTxData({...txData as FeeMarketEIP1559TxData, r, s, v}, { common: this.common });
+            return addHexPrefix(signed.serialize().toString('hex'));
+        } else if (isAccessListEIP2930TxData(txData)) {
+            const digest = AccessListEIP2930Transaction.fromTxData(txData, { common: this.common }).getMessageToSign();
+            const {r, s, v}  = await this.wallets.ecsign(account, Buffer.from(digest), this.common?.chainId());
+            const signed     = AccessListEIP2930Transaction.fromTxData({...txData as AccessListEIP2930TxData, r, s, v}, { common: this.common });
+            return addHexPrefix(signed.serialize().toString('hex'));
+        } else if (isBlobEIP4844TxData(txData)) {
+            const digest = BlobEIP4844Transaction.fromTxData(txData, { common: this.common }).getMessageToSign();
+            const {r, s, v}  = await this.wallets.ecsign(account, Buffer.from(digest), this.common?.chainId());
+            const signed     = BlobEIP4844Transaction.fromTxData({...txData as BlobEIP4844TxData, r, s, v}, { common: this.common });
+            return addHexPrefix(signed.serialize().toString('hex'));
+        }
+        throw new Error("Tx type is not supported")
     }
 
     /**
@@ -66,7 +93,7 @@ export class Signer {
 
         const rStr = toUnsigned(fromSigned(r)).toString('hex');
         const sStr = toUnsigned(fromSigned(s)).toString('hex');
-        const vStr = bigIntToBuffer(v).toString('hex');
+        const vStr = Buffer.from(bigIntToBytes(v)).toString('hex');
 
         return addHexPrefix(rStr.concat(sStr, vStr));
     }
