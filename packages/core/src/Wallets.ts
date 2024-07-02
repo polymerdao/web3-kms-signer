@@ -17,16 +17,20 @@ export abstract class Wallets {
      * @param keyId The identifier for the key.
      * @returns Promise that resolves to the public key as a Buffer.
      */
-    abstract getPublickey(KeyId: string): Promise<Buffer>;
+    abstract getPublickey(keyId: string): Promise<Buffer>;
 
     /**
      * Abstract method for signing a digest with the specified key identifier using ECDSA.
      * @param account An object containing the keyId and optional address of the signing account.
      * @param digest The message digest to sign.
+     * @param txType The type of transaction to sign.
      * @param chainId Optional chain ID to specify the blockchain network.
      * @returns Promise that resolves to an ECDSASignature object.
      */
-    abstract ecsign(account: { keyId: string, address?: Buffer }, digest: Buffer, chainId?: bigint): Promise<ECDSASignature>;
+    abstract ecsign(account: {
+        keyId: string,
+        address?: Buffer
+    }, digest: Buffer, txType?: number, chainId?: bigint): Promise<ECDSASignature>;
 
     /**
      * Retrieves the address associated with a given key identifier.
